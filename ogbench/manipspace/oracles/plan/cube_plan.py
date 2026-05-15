@@ -26,6 +26,7 @@ class CubePlanOracle(PlanOracle):
         poses['pick'] = self.above(block_initial, 0.1 + np.random.uniform(0, 0.1))
         poses['pick_start'] = block_initial
         poses['pick_end'] = block_initial
+        poses['pick_settle'] = block_initial
         poses['postpick'] = poses['pick']
 
         # Place.
@@ -54,6 +55,7 @@ class CubePlanOracle(PlanOracle):
         times['pick'] = times['initial'] + self._dt
         times['pick_start'] = times['pick'] + self._dt * 1.5
         times['pick_end'] = times['pick_start'] + self._dt
+        times['pick_settle'] = times['pick_end'] + self._dt * 0.5
         times['postpick'] = times['pick_end'] + self._dt
         times['clearance'] = times['postpick'] + self._dt
         times['place'] = times['clearance'] + self._dt

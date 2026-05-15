@@ -6,6 +6,10 @@ import numpy as np
 from absl import app, flags
 from tqdm import trange
 
+import os
+import cv2
+import datetime
+
 import ogbench.manipspace  # noqa
 from ogbench.manipspace.oracles.markov.button_markov import ButtonMarkovOracle
 from ogbench.manipspace.oracles.markov.cube_markov import CubeMarkovOracle
@@ -28,6 +32,7 @@ flags.DEFINE_float('min_norm', 0.4, 'Minimum action norm for MarkovOracle.')
 flags.DEFINE_float('p_random_action', 0, 'Probability of selecting a random action.')
 flags.DEFINE_integer('num_episodes', 1000, 'Number of episodes.')
 flags.DEFINE_integer('max_episode_steps', 1001, 'Number of episodes.')
+flags.DEFINE_bool('render', False, 'Whether to render and save videos.')
 
 
 def main(_):
@@ -91,6 +96,7 @@ def main(_):
     total_train_steps = 0
     num_train_episodes = FLAGS.num_episodes
     num_val_episodes = FLAGS.num_episodes // 10
+    frames_traj = []
     for ep_idx in trange(num_train_episodes + num_val_episodes):
         # Have an additional while loop to handle rare cases with undesirable states (for the Scene environment).
         while True:
@@ -122,6 +128,10 @@ def main(_):
             ep_qpos = []
 
             while not done:
+                if FLAGS.render:  # and (step % FLAGS.video_frame_skip == 0):
+                    frame = env.render().copy()
+                    frames_traj.append(frame)
+
                 if np.random.rand() < FLAGS.p_random_action:
                     # Sample a random action.
                     action = env.action_space.sample()
@@ -202,6 +212,26 @@ def main(_):
 
     for path, dataset in [(train_path, train_dataset), (val_path, val_dataset)]:
         np.savez_compressed(path, **dataset)
+
+    if FLAGS.render:
+        videos_dir = os.path.join('./videos')
+        os.makedirs(videos_dir, exist_ok=True)
+        stamp_str = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+        episode_path = os.path.join(videos_dir, f'video_{FLAGS.dataset_type}.mp4')
+        height, width, _ = frames_traj[0].shape
+        video_writer = cv2.VideoWriter(episode_path, cv2.VideoWriter_fourcc(*'mp4v'), 30, (width, height))
+        # breakpoint()
+
+        for i in range(len(frames_traj)):
+            # episode_frames = frames_traj[i]
+            # episode_name = (f'epi{i}_{stamp_str}.mp4')
+            # episode_path = os.path.join(videos_dir, stamp_str)
+            # height, width, _ = frames_traj[i].shape
+            # video_writer = cv2.VideoWriter(episode_path, cv2.VideoWriter_fourcc(*'mp4v'), 30, (width, height))
+            # for frame in episode_frames:
+            video_writer.write(cv2.cvtColor(frames_traj[i], cv2.COLOR_RGB2BGR))
+        video_writer.release()
+        print('Saved video to: ', videos_dir)
 
 
 if __name__ == '__main__':

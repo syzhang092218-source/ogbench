@@ -62,8 +62,7 @@ class ManipSpaceEnv(CustomMuJoCoEnv):
 
         # Define constants.
         self._desc_dir = Path(__file__).resolve().parent / '..' / 'descriptions'
-        # self._home_qpos = np.asarray([-np.pi / 2, -np.pi / 2, np.pi / 2, -np.pi / 2, -np.pi / 2, 0])
-        self._home_qpos = np.asarray([0.0, -np.pi / 4, 0.0, -3 * np.pi / 4, 0.0, np.pi / 2, np.pi / 4])
+        self._home_qpos = np.asarray([-np.pi / 2, -np.pi / 2, np.pi / 2, -np.pi / 2, -np.pi / 2, 0])
         self._effector_down_rotation = lie.SO3(np.asarray([0.0, 1.0, 0.0, 0.0]))
         self._workspace_bounds = np.asarray([[0.25, -0.35, 0.02], [0.6, 0.35, 0.35]])
         self._arm_sampling_bounds = np.asarray([[0.25, -0.35, 0.20], [0.6, 0.35, 0.35]])
@@ -104,8 +103,7 @@ class ManipSpaceEnv(CustomMuJoCoEnv):
         assert success_timing in ['pre', 'post']
 
         # Initialize inverse kinematics controller.
-        # ik_mjcf = mjcf.from_path((self._desc_dir / 'universal_robots_ur5e' / 'ur5e.xml'), escape_separators=True)
-        ik_mjcf = mjcf.from_path((self._desc_dir / 'franka_fr3' / 'fr3.xml'), escape_separators=True)
+        ik_mjcf = mjcf.from_path((self._desc_dir / 'universal_robots_ur5e' / 'ur5e.xml'), escape_separators=True)
         xml_str = mjcf_utils.to_string(ik_mjcf)
         assets = mjcf_utils.get_assets(ik_mjcf)
         ik_model = mujoco.MjModel.from_xml_string(xml_str, assets)
@@ -167,8 +165,7 @@ class ManipSpaceEnv(CustomMuJoCoEnv):
     def build_mjcf_model(self):
         # Set scene.
         arena_mjcf = mjcf.from_path((self._desc_dir / 'floor_wall.xml').as_posix())
-        # arena_mjcf.model = 'ur5e_arena'
-        arena_mjcf.model = 'fr3_arena'
+        arena_mjcf.model = 'ur5e_arena'
 
         arena_mjcf.statistic.center = (0.3, 0, 0.15)
         arena_mjcf.statistic.extent = 0.7
@@ -179,37 +176,31 @@ class ManipSpaceEnv(CustomMuJoCoEnv):
         arena_mjcf.visual.map.zfar = 10.0
 
         # Add UR5e robot arm.
-        # ur5e_mjcf = mjcf.from_path((self._desc_dir / 'universal_robots_ur5e' / 'ur5e.xml'), escape_separators=True)
-        # ur5e_mjcf.model = 'ur5e'
-        fr3_mjcf = mjcf.from_path((self._desc_dir / 'franka_fr3' / 'fr3.xml'), escape_separators=True)
-        fr3_mjcf.model = 'fr3'
+        ur5e_mjcf = mjcf.from_path((self._desc_dir / 'universal_robots_ur5e' / 'ur5e.xml'), escape_separators=True)
+        ur5e_mjcf.model = 'ur5e'
 
-        for light in fr3_mjcf.find_all('light'):
+        for light in ur5e_mjcf.find_all('light'):
             light.remove()
             del light
 
         # Attach the robotiq gripper to the UR5e flange.
-        # gripper_mjcf = mjcf.from_path((self._desc_dir / 'robotiq_2f85' / '2f85.xml'), escape_separators=True)
-        # gripper_mjcf.model = 'robotiq'
-        # mjcf_utils.attach(ur5e_mjcf, gripper_mjcf, 'attachment_site')
-        gripper_mjcf = mjcf.from_path((self._desc_dir / 'franka_emika_panda' / 'hand.xml'), escape_separators=True)
-        gripper_mjcf.model = 'hand'
-        mjcf_utils.attach(fr3_mjcf, gripper_mjcf, 'attachment_site')
+        gripper_mjcf = mjcf.from_path((self._desc_dir / 'robotiq_2f85' / '2f85.xml'), escape_separators=True)
+        gripper_mjcf.model = 'robotiq'
+        mjcf_utils.attach(ur5e_mjcf, gripper_mjcf, 'attachment_site')
 
         # Attach UR5e to the scene.
-        # mjcf_utils.attach(arena_mjcf, ur5e_mjcf)
-        mjcf_utils.attach(arena_mjcf, fr3_mjcf)
+        mjcf_utils.attach(arena_mjcf, ur5e_mjcf)
 
         self.add_objects(arena_mjcf)
 
         # Cache joint and actuator elements.
         self._arm_jnts = mjcf_utils.safe_find_all(
-            fr3_mjcf,
+            ur5e_mjcf,
             'joint',
             exclude_attachments=True,
         )
         self._arm_acts = mjcf_utils.safe_find_all(
-            fr3_mjcf,
+            ur5e_mjcf,
             'actuator',
             exclude_attachments=True,
         )
@@ -262,24 +253,16 @@ class ManipSpaceEnv(CustomMuJoCoEnv):
         self._arm_actuator_ids = np.asarray([self._model.actuator(name).id for name in actuator_names])
         gripper_actuator_names = [a.full_identifier for a in self._gripper_acts]
         self._gripper_actuator_ids = np.asarray([self._model.actuator(name).id for name in gripper_actuator_names])
-        # self._gripper_opening_joint_id = self._model.joint('ur5e/robotiq/right_driver_joint').id
-        self._gripper_opening_joint_id = self._model.joint('fr3/hand/finger_joint1').id
+        self._gripper_opening_joint_id = self._model.joint('ur5e/robotiq/right_driver_joint').id
 
         # Modify PD gains.
-        # self._model.actuator_gainprm[self._arm_actuator_ids, 0] = np.asarray([4500, 4500, 4500, 2000, 2000, 500])
-        # self._model.actuator_gainprm[self._arm_actuator_ids, 2] = np.asarray([-450, -450, -450, -200, -200, -50])
-        # self._model.actuator_biasprm[self._arm_actuator_ids, 1] = -np.asarray([4500, 4500, 4500, 2000, 2000, 500])
-        # Add a 7th value to these arrays
-        self._model.actuator_gainprm[self._arm_actuator_ids, 0] = np.asarray([4500, 4500, 4500, 4500, 2000, 2000, 500])
-        self._model.actuator_gainprm[self._arm_actuator_ids, 2] = np.asarray([-450, -450, -450, -450, -200, -200, -50])
-        self._model.actuator_biasprm[self._arm_actuator_ids, 1] = -np.asarray([4500, 4500, 4500, 4500, 2000, 2000, 500])
+        self._model.actuator_gainprm[self._arm_actuator_ids, 0] = np.asarray([4500, 4500, 4500, 2000, 2000, 500])
+        self._model.actuator_gainprm[self._arm_actuator_ids, 2] = np.asarray([-450, -450, -450, -200, -200, -50])
+        self._model.actuator_biasprm[self._arm_actuator_ids, 1] = -np.asarray([4500, 4500, 4500, 2000, 2000, 500])
 
         # Site IDs.
-        # self._pinch_site_id = self._model.site('ur5e/robotiq/pinch').id
-        # self._attach_site_id = self._model.site('ur5e/attachment_site').id
-        # Update site names
-        self._pinch_site_id = self._model.site('fr3/hand/pinch').id
-        self._attach_site_id = self._model.site('fr3/attachment_site').id
+        self._pinch_site_id = self._model.site('ur5e/robotiq/pinch').id
+        self._attach_site_id = self._model.site('ur5e/attachment_site').id
 
         pinch_pose = lie.SE3.from_rotation_and_translation(
             rotation=lie.SO3.from_matrix(self._data.site_xmat[self._pinch_site_id].reshape(3, 3)),
@@ -392,11 +375,7 @@ class ManipSpaceEnv(CustomMuJoCoEnv):
         effector_yaw = lie.SO3.from_matrix(
             self._data.site_xmat[self._pinch_site_id].copy().reshape(3, 3)
         ).compute_yaw_radians()
-        # gripper_opening = np.array(np.clip([self._data.qpos[self._gripper_opening_joint_id] / 0.8], 0, 1))
-        # gripper_opening = np.array(np.clip([self._data.qpos[self._gripper_opening_joint_id] / 0.04], 0, 1))
-        gripper_opening = np.array(
-            np.clip([1.0 - (self._data.qpos[self._gripper_opening_joint_id] / 0.04)], 0, 1)
-        )
+        gripper_opening = np.array(np.clip([self._data.qpos[self._gripper_opening_joint_id] / 0.8], 0, 1))
         target_effector_translation = effector_pos + a_pos
         target_effector_orientation = (
             lie.SO3.from_z_radians(a_ori)
@@ -404,7 +383,6 @@ class ManipSpaceEnv(CustomMuJoCoEnv):
             @ self._effector_down_rotation.inverse()
         )
         target_gripper_opening = gripper_opening + a_gripper
-        target_gripper_opening = np.clip(target_gripper_opening, 0.0, 1.0)
 
         # Make sure the target pose respects the action limits.
         np.clip(
@@ -436,10 +414,7 @@ class ManipSpaceEnv(CustomMuJoCoEnv):
 
         # Set the desired joint positions for the underlying PD controller.
         self._data.ctrl[self._arm_actuator_ids] = qpos_target
-        # self._data.ctrl[self._gripper_actuator_ids] = 255.0 * target_gripper_opening
-        # target_gripper_opening is normalized [0, 1]. Multiply by 0.04m max stroke.
-        # self._data.ctrl[self._gripper_actuator_ids] = 0.04 * target_gripper_opening
-        self._data.ctrl[self._gripper_actuator_ids] = 255.0 * (1.0 - target_gripper_opening)
+        self._data.ctrl[self._gripper_actuator_ids] = 255.0 * target_gripper_opening
 
     def pre_step(self):
         self._prev_qpos = self._data.qpos.copy()
@@ -456,21 +431,12 @@ class ManipSpaceEnv(CustomMuJoCoEnv):
         ob_info['proprio/effector_yaw'] = np.array(
             [lie.SO3.from_matrix(self._data.site_xmat[self._pinch_site_id].copy().reshape(3, 3)).compute_yaw_radians()]
         )
-        # ob_info['proprio/gripper_opening'] = np.array(
-        #     np.clip([self._data.qpos[self._gripper_opening_joint_id] / 0.8], 0, 1)
-        # )
-        # ob_info['proprio/gripper_opening'] = np.array(
-        #     np.clip([self._data.qpos[self._gripper_opening_joint_id] / 0.04], 0, 1)
-        # )
         ob_info['proprio/gripper_opening'] = np.array(
-            np.clip([1.0 - (self._data.qpos[self._gripper_opening_joint_id] / 0.04)], 0, 1)
+            np.clip([self._data.qpos[self._gripper_opening_joint_id] / 0.8], 0, 1)
         )
         ob_info['proprio/gripper_vel'] = self._data.qvel[[self._gripper_opening_joint_id]].copy()
-        # ob_info['proprio/gripper_contact'] = np.array(
-        #     [np.clip(np.linalg.norm(self._data.body('ur5e/robotiq/right_pad').cfrc_ext) / 50, 0, 1)]
-        # )
         ob_info['proprio/gripper_contact'] = np.array(
-            [np.clip(np.linalg.norm(self._data.body('fr3/hand/right_finger').cfrc_ext) / 50, 0, 1)]
+            [np.clip(np.linalg.norm(self._data.body('ur5e/robotiq/right_pad').cfrc_ext) / 50, 0, 1)]
         )
 
         self.add_object_info(ob_info)
