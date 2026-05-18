@@ -1,6 +1,7 @@
 import mujoco
 import numpy as np
 from dm_control import mjcf
+from tqdm import tqdm
 
 from ogbench.manipspace import lie
 from ogbench.manipspace.envs.manipspace_env import ManipSpaceEnv
@@ -668,6 +669,7 @@ class CubeEnv(ManipSpaceEnv):
 
         # Pick one of the top cubes as the target.
         self._target_block = self.np_random.choice(top_blocks)
+        tqdm.write(f'New target block: {self._target_block}')
 
         stack = len(top_blocks) >= 2 and self.np_random.uniform() < p_stack
         if stack:
@@ -682,6 +684,86 @@ class CubeEnv(ManipSpaceEnv):
         # Randomize target orientation.
         yaw = self.np_random.uniform(0, 2 * np.pi)
         tar_ori = lie.SO3.from_z_radians(yaw).wxyz.tolist()
+
+        # Only show the target block.
+        for i in range(self._num_cubes):
+            if i == self._target_block:
+                # Set the target position and orientation.
+                self._data.mocap_pos[self._cube_target_mocap_ids[i]] = tar_pos
+                self._data.mocap_quat[self._cube_target_mocap_ids[i]] = tar_ori
+            else:
+                # Move the non-target blocks out of the way.
+                self._data.mocap_pos[self._cube_target_mocap_ids[i]] = (0, 0, -0.3)
+                self._data.mocap_quat[self._cube_target_mocap_ids[i]] = lie.SO3.identity().wxyz.tolist()
+
+        # Set the target colors.
+        for i in range(self._num_cubes):
+            if self._visualize_info and i == self._target_block:
+                for gid in self._cube_target_geom_ids_list[i]:
+                    self._model.geom(gid).rgba[3] = 0.2
+            else:
+                for gid in self._cube_target_geom_ids_list[i]:
+                    self._model.geom(gid).rgba[3] = 0.0
+
+        if return_info:
+            return self.compute_observation(), self.get_reset_info()
+
+    def set_custom_target(self, return_info=True, p_stack=0.5, custom_target_block=None, custom_tar_pos=None,
+                       custom_tar_ori=None):
+        """Set a new random target for data collection, or a specific custom target.
+
+        Args:
+            return_info: Whether to return the observation and reset info.
+            p_stack: Probability of stacking the target block on top of another block.
+            custom_target_block (int, optional): The specific index of the block to target.
+            custom_tar_pos (np.ndarray, optional): A 3D array [x, y, z] for the target position.
+            custom_tar_ori (list, optional): A 4D list [w, x, y, z] for the target orientation quaternion.
+        """
+        assert self._mode == 'data_collection'
+
+        block_xyzs = np.array([self._data.joint(f'object_joint_{i}').qpos[:3] for i in range(self._num_cubes)])
+
+        # Compute the top blocks.
+        top_blocks = []
+        for i in range(self._num_cubes):
+            for j in range(self._num_cubes):
+                if i == j:
+                    continue
+                if block_xyzs[j][2] > block_xyzs[i][2] and np.linalg.norm(block_xyzs[i][:2] - block_xyzs[j][:2]) < 0.02:
+                    break
+            else:
+                top_blocks.append(i)
+
+        # Pick the target block: Use custom if provided, otherwise random top block
+        if custom_target_block is not None:
+            self._target_block = custom_target_block
+        else:
+            self._target_block = self.np_random.choice(top_blocks)
+
+        # tqdm.write(f'New target block: {self._target_block}') # Assuming tqdm is imported
+
+        # Determine Target Position
+        if custom_tar_pos is not None:
+            tar_pos = custom_tar_pos
+        else:
+            stack = len(top_blocks) >= 2 and self.np_random.uniform() < p_stack
+            if stack:
+                # Stack the target block on top of another block.
+                block_idx = self.np_random.choice(list(set(top_blocks) - {self._target_block}))
+                block_pos = self._data.joint(f'object_joint_{block_idx}').qpos[:3]
+                tar_pos = np.array([block_pos[0], block_pos[1], block_pos[2] + 0.04])
+            else:
+                # Randomize target position.
+                xy = self.np_random.uniform(*self._target_sampling_bounds)
+                tar_pos = (*xy, 0.02)
+
+        # Determine Target Orientation
+        if custom_tar_ori is not None:
+            tar_ori = custom_tar_ori
+        else:
+            # Randomize target orientation.
+            yaw = self.np_random.uniform(0, 2 * np.pi)
+            tar_ori = lie.SO3.from_z_radians(yaw).wxyz.tolist()
 
         # Only show the target block.
         for i in range(self._num_cubes):

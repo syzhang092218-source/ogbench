@@ -543,3 +543,70 @@ class ManipSpaceEnv(CustomMuJoCoEnv):
             camera = 'front' if self._ob_type == 'states' else 'front_pixels'
 
         return super().render(camera=camera, *args, **kwargs)
+
+    def reset_to_custom_state(self, ee_pos=None, ee_quat=None, ee_yaw=None, cube_poses=None, cube_quats=None):
+        """Resets the environment and forcibly injects custom end-effector and cube states.
+
+        Args:
+            ee_pos (np.ndarray): 3D target position for the end-effector.
+            ee_quat (np.ndarray): 4D quaternion (wxyz) for the end-effector.
+            ee_yaw (float): Yaw angle in radians (alternative to ee_quat).
+            cube_poses (list of np.ndarray): List of 3D positions for the cubes.
+            cube_quats (list of np.ndarray): List of 4D quaternions for the cubes.
+
+        Returns:
+            ob: The observation array.
+            info: The reset info dictionary.
+        """
+        # 1. Run the standard reset first to handle task goals and internal buffers
+        self.reset()
+
+        # 2. Force the End-Effector State via Inverse Kinematics
+        if ee_pos is not None:
+            if ee_quat is not None:
+                eff_ori = lie.SO3(wxyz=ee_quat)
+            elif ee_yaw is not None:
+                cur_ori = self._effector_down_rotation
+                rotz = lie.SO3.from_z_radians(ee_yaw)
+                eff_ori = rotz @ cur_ori
+            else:
+                # Fallback to downward rotation if only position is provided
+                eff_ori = self._effector_down_rotation
+
+            T_wp = lie.SE3.from_rotation_and_translation(eff_ori, ee_pos)
+            T_wa = T_wp @ self._T_pa
+            qpos_init = self._ik.solve(
+                pos=T_wa.translation(),
+                quat=T_wa.rotation().wxyz,
+                curr_qpos=self._home_qpos,
+            )
+
+            self._data.qpos[self._arm_joint_ids] = qpos_init
+            self._data.qvel[self._arm_joint_ids] = 0.0  # Zero out velocity
+
+        # 3. Force the Cube States
+        if cube_poses is not None:
+            for i, pos in enumerate(cube_poses):
+                joint_name = f'object_joint_{i}'
+                try:
+                    self._data.joint(joint_name).qpos[:3] = pos
+                    self._data.joint(joint_name).qvel[:] = 0.0
+                except KeyError:
+                    continue  # Safely ignore if fewer cubes exist than provided
+
+        if cube_quats is not None:
+            for i, quat in enumerate(cube_quats):
+                joint_name = f'object_joint_{i}'
+                try:
+                    self._data.joint(joint_name).qpos[3:] = quat
+                except KeyError:
+                    continue
+
+        # 4. Synchronize Physics and Observations
+        mujoco.mj_forward(self._model, self._data)
+        self.pre_step()  # Update prev_qpos / prev_qvel buffers
+
+        ob = self.compute_observation()
+        info = self.get_reset_info()
+
+        return ob, info
